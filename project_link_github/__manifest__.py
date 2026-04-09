@@ -3,7 +3,7 @@
     "summary": "เชื่อม GitHub Pull Request กับ project.task อัตโนมัติผ่าน Webhook",
     "version": "16.0.1.0.0",
     "category": "Project Management",
-    "author": "KMITL",
+    "author": "Aginix Technologies",
     "website": "",
     "license": "LGPL-3",
     "application": False,
