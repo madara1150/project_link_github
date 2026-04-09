@@ -9,7 +9,7 @@
                 <page string="GitHub PR" name="github_pr">
                     <group>
                         <group string="Pull Request Info">
-                            <field name="github_pr_url" widget="url" />
+                            <field name="github_pr_url" widget="url" readonly="1" />
                             <field name="github_pr_number" />
                             <field name="github_pr_state"
                                 widget="badge"
@@ -19,9 +19,9 @@
                             />
                         </group>
                     </group>
-                    <group string="PR Description">
-                        <field name="github_pr_description" nolabel="1" />
-                    </group>
+                </page>
+                <page string="GitHub PR Description" name="github_pr_description">
+                    <field name="github_pr_description_html" readonly="1" nolabel="1" />
                 </page>
             </xpath>
         </field>

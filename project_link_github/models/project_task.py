@@ -1,4 +1,4 @@
-from odoo import fields, models
+from odoo import api, fields, models
 
 
 class ProjectTask(models.Model):
@@ -14,6 +14,11 @@ class ProjectTask(models.Model):
         readonly=True,
         help="Description จาก GitHub PR (อัปเดตอัตโนมัติจาก webhook)",
     )
+    github_pr_description_html = fields.Html(
+        string="GitHub PR Description",
+        compute="_compute_github_pr_description_html",
+        sanitize=False,
+    )
     github_pr_number = fields.Integer(
         string="GitHub PR Number",
         readonly=True,
@@ -27,3 +32,25 @@ class ProjectTask(models.Model):
         string="GitHub PR State",
         readonly=True,
     )
+
+    @api.depends("github_pr_description")
+    def _compute_github_pr_description_html(self):
+        try:
+            import markdown as md_lib
+
+            for task in self:
+                if task.github_pr_description:
+                    task.github_pr_description_html = md_lib.markdown(
+                        task.github_pr_description,
+                        extensions=["nl2br", "fenced_code", "tables"],
+                    )
+                else:
+                    task.github_pr_description_html = False
+        except ImportError:
+            for task in self:
+                desc = task.github_pr_description or ""
+                task.github_pr_description_html = (
+                    '<div style="white-space:pre-wrap;word-wrap:break-word">'
+                    + desc
+                    + "</div>"
+                )
