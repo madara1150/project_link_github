@@ -9,8 +9,7 @@
     "application": False,
     "installable": True,
     "depends": [
-        "project",
-        "project_task_pull_request",
+        "project" ,'project_key'
     ],
     "data": [
         "security/ir.model.access.csv",

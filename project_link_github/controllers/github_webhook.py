@@ -103,9 +103,14 @@ class GithubWebhookController(http.Controller):
                 "GitHub webhook: no task reference found in PR #%s", pr_number
             )
             return []
-
+        _logger.info(
+                "=====================================> Math ========>#%s", pr_number
+            )
         task_ids = list({int(m) for m in matches})
         tasks = request.env["project.task"].sudo().browse(task_ids).exists()
+        _logger.info(
+                "=====================================> PROJECT มีไหม ========>#%s", tasks
+            )
 
         if not tasks:
             _logger.info(
@@ -114,7 +119,18 @@ class GithubWebhookController(http.Controller):
                 pr_number,
             )
             return []
-
+        _logger.info(
+                "=====================================> github_pr_url มีไหม ========>#%s", pr_url
+            )
+        _logger.info(
+                "=====================================> description มีไหม ========>#%s", description
+            )
+        _logger.info(
+                "=====================================> github_pr_number มีไหม ========>#%s", pr_number
+            )
+        _logger.info(
+                "=====================================> pr_state มีไหม ========>#%s", pr_state
+            )
         tasks.write(
             {
                 "github_pr_url": pr_url,
