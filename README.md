@@ -3,7 +3,7 @@
 โมดูล Odoo สำหรับเชื่อมต่อ GitHub Pull Requests กับ Project Tasks ใน Odoo โดยอัตโนมัติผ่าน Webhook
 
 - **Version:** 16.0.1.0.0
-- **Author:** KMITL
+- **Author:** Aginix Technologies Co., ltd.
 - **License:** LGPL-3
 - **Category:** Project Management
 
