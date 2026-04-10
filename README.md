@@ -22,7 +22,7 @@
 ---
 
 ## วิดีโอสอนใช้งาน
-https://youtu.be/mv8KtzCQJ60
+https://youtu.be/Zz5PNZbrCLQ
 
 ---
 
