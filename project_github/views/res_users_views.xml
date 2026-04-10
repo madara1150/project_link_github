@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_users_form_simple_modif_github" model="ir.ui.view">
+        <field name="name">res.users.preferences.form.github</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
+        <field name="arch" type="xml">
+            <!-- Inject GitHub section after the standard preferences group -->
+            <group name="preference_contact" position="after">
+                <group name="github_connection" string="GitHub">
+                    <field name="github_avatar_url" invisible="1"/>
+                    <div class="o_td_label"/>
+                    <!-- Not connected: show when github_login is empty -->
+                    <div attrs="{'invisible': [('github_login', '!=', False)]}">
+                        <a href="/github/oauth/authorize" class="btn btn-secondary btn-sm" role="button">
+                            <i class="fa fa-github me-1"/>
+                            Connect with GitHub
+                        </a>
+                    </div>
+                    <!-- Connected: single button showing username, click = disconnect -->
+                    <field
+                        name="github_login"
+                        widget="github_login_button"
+                        nolabel="1"
+                        attrs="{'invisible': [('github_login', '=', False)]}"
+                    />
+                </group>
+            </group>
+        </field>
+    </record>
+
+    <!-- Action: list GitHub repositories filtered to the current user -->
+    <record id="action_github_repository" model="ir.actions.act_window">
+        <field name="name">GitHub Repositories</field>
+        <field name="res_model">github.repository</field>
+        <field name="view_mode">tree,form</field>
+        <field name="domain">[('user_id', '=', uid)]</field>
+        <field name="context">{'default_user_id': uid}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No repositories yet!
+            </p>
+            <p>
+                Connect your GitHub account from your
+                <a href="/odoo/settings?searchTerms=GitHub">profile settings</a>,
+                then click <b>Sync from GitHub</b> in any repository record.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu item under Project app -->
+    <menuitem
+        id="menu_github_repository"
+        name="GitHub Repositories"
+        parent="project.menu_main_pm"
+        action="action_github_repository"
+        sequence="100"
+        groups="base.group_user"
+    />
+</odoo>
