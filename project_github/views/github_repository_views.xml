@@ -6,13 +6,13 @@
         <field name="model">github.repository</field>
         <field name="arch" type="xml">
             <tree string="GitHub Repositories">
-                <field name="name"/>
-                <field name="full_name"/>
-                <field name="description" optional="show"/>
-                <field name="private" widget="boolean_toggle" optional="show"/>
-                <field name="default_branch" optional="show"/>
-                <field name="project_id" optional="show"/>
-                <field name="updated_at" optional="show"/>
+                <field name="name" />
+                <field name="full_name" />
+                <field name="description" optional="show" />
+                <field name="private" widget="boolean_toggle" optional="show" />
+                <field name="default_branch" optional="show" />
+                <field name="project_id" optional="show" />
+                <field name="updated_at" optional="show" />
                 <button
                     name="action_open_on_github"
                     type="object"
@@ -54,30 +54,31 @@
                 <sheet>
                     <div class="oe_title">
                         <h1>
-                            <field name="full_name" readonly="1"/>
+                            <field name="full_name" readonly="1" />
                         </h1>
                     </div>
                     <group>
                         <group string="Repository Info">
-                            <field name="name" readonly="1"/>
-                            <field name="private" readonly="1"/>
-                            <field name="default_branch" readonly="1"/>
-                            <field name="html_url" widget="url" readonly="1"/>
-                            <field name="updated_at" readonly="1"/>
+                            <field name="name" readonly="1" />
+                            <field name="private" readonly="1" />
+                            <field name="default_branch" readonly="1" />
+                            <field name="html_url" widget="url" readonly="1" />
+                            <field name="updated_at" readonly="1" />
                         </group>
                         <group string="Odoo Links">
-                            <field name="user_id" readonly="1"/>
-                            <field name="project_id"/>
-                            <field name="github_id" readonly="1" groups="base.group_system"/>
+                            <field name="user_id" readonly="1" />
+                            <field name="project_id" />
+                            <field
+                                name="github_id"
+                                readonly="1"
+                                groups="base.group_system"
+                            />
                         </group>
                     </group>
-                    <group string="Description">
-                        <field
-                            name="description"
-                            nolabel="1"
-                            placeholder="Repository description (editable — click 'Push Description to GitHub' to sync)"
-                        />
-                    </group>
+                    <field
+                        name="description"
+                        placeholder="Repository description (editable — click 'Push Description to GitHub' to sync)"
+                    />
                 </sheet>
             </form>
         </field>
@@ -89,9 +90,9 @@
         <field name="model">github.repository</field>
         <field name="arch" type="xml">
             <search string="GitHub Repositories">
-                <field name="name" string="Name"/>
-                <field name="full_name" string="Full Name"/>
-                <field name="project_id"/>
+                <field name="name" string="Name" />
+                <field name="full_name" string="Full Name" />
+                <field name="project_id" />
                 <filter
                     name="private"
                     string="Private"
@@ -108,8 +109,16 @@
                     domain="[('project_id', '!=', False)]"
                 />
                 <group expand="0" string="Group By">
-                    <filter name="group_by_project" string="Project" context="{'group_by': 'project_id'}"/>
-                    <filter name="group_by_private" string="Visibility" context="{'group_by': 'private'}"/>
+                    <filter
+                        name="group_by_project"
+                        string="Project"
+                        context="{'group_by': 'project_id'}"
+                    />
+                    <filter
+                        name="group_by_private"
+                        string="Visibility"
+                        context="{'group_by': 'private'}"
+                    />
                 </group>
             </search>
         </field>

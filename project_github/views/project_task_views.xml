@@ -9,7 +9,7 @@
                 <button
                     name="action_github_mark_ok_to_merge"
                     type="object"
-                    string="ผ่านการทดสอบ"
+                    string="Approve PR"
                     class="btn-success"
                     attrs="{
                                     'invisible': [
@@ -22,7 +22,7 @@
                 <button
                     name="action_github_mark_fix"
                     type="object"
-                    string="ไม่ผ่านการทดสอบ"
+                    string="Request Changes"
                     class="btn-danger"
                     attrs="{
                                     'invisible': [
