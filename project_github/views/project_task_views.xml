@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_task_form_github" model="ir.ui.view">
+        <field name="name">project.task.form.github</field>
+        <field name="model">project.task</field>
+        <field name="inherit_id" ref="project.view_task_form2" />
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button
+                    name="action_github_mark_ok_to_merge"
+                    type="object"
+                    string="Approve PR"
+                    class="btn-success"
+                    attrs="{
+                                    'invisible': [
+                                        ('github_can_manage_pr_labels', '=', False),
+                                        ('github_pr_state', '!=', 'open'),
+                                        ('github_user_connected', '=', False)
+                                    ]
+                                }"
+                />
+                <button
+                    name="action_github_mark_fix"
+                    type="object"
+                    string="Request Changes"
+                    class="btn-danger"
+                    attrs="{
+                                    'invisible': [
+                                        ('github_can_manage_pr_labels', '=', False),
+                                        ('github_pr_state', '!=', 'open'),
+                                        ('github_user_connected', '=', False),
+                                    ]
+                                }"
+                />
+            </xpath>
+            <xpath expr="//notebook" position="inside">
+                <page string="GitHub PR" name="github_pr">
+                    <group>
+                        <group string="Pull Request Info">
+                            <field name="github_pr_url" widget="url" readonly="1" />
+                            <field name="github_pr_number" invisible="1" />
+                            <field name="github_pr_labels" readonly="1"/>
+                            <field name="github_can_manage_pr_labels" invisible="1" />
+                            <field name="github_user_connected" invisible="1" />
+                            <field name="github_sync_comments" />
+                            <field
+                                name="github_pr_state"
+                                widget="badge"
+                                decoration-success="github_pr_state == 'merged'"
+                                decoration-info="github_pr_state == 'open'"
+                                decoration-muted="github_pr_state == 'closed'"
+                            />
+                        </group>
+                    </group>
+                </page>
+                <page string="GitHub PR Description" name="github_pr_description">
+                    <field name="github_pr_description_html" readonly="1" nolabel="1" />
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

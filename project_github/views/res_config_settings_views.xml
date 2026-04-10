@@ -13,6 +13,37 @@
                     string="GitHub Integration"
                     data-key="kmitl_project_github"
                 >
+                    <h2>GitHub OAuth App</h2>
+                    <div class="row mt16 o_settings_container">
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <span class="o_form_label">OAuth App Setup</span>
+                                <div class="text-muted">
+                                    สร้าง OAuth App ที่
+                                    <a href="https://github.com/settings/developers" target="_blank">
+                                        github.com/settings/developers
+                                    </a>
+                                    แล้วตั้ง Authorization callback URL เป็น
+                                    <code>[your-odoo-url]/github/oauth/callback</code>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <label for="github_client_id" string="Client ID"/>
+                                <field name="github_client_id"/>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane"/>
+                            <div class="o_setting_right_pane">
+                                <label for="github_client_secret" string="Client Secret"/>
+                                <field name="github_client_secret" password="True"/>
+                            </div>
+                        </div>
+                    </div>
                     <h2>GitHub Webhook</h2>
                     <div class="row mt16 o_settings_container">
                         <div class="col-12 col-lg-6 o_setting_box">
@@ -40,12 +71,12 @@
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane" />
                             <div class="o_setting_right_pane">
-                                <label for="github_task_prefix" string="Task Reference Prefix" />
+                                <label for="github_task_prefix" string="Task Reference Prefix (Fallback)" />
                                 <div class="text-muted">
-                                    Prefix ที่ใช้ใน PR description เช่น
-                                    <code>task</code>
-                                    จะ match กับ
-                                    <code>task-211</code>
+                                    ใช้เมื่อ repo ไม่ได้ link กับ project ใดๆ
+                                    — ถ้า repo ถูก link กับ project แล้ว ให้ตั้ง prefix ที่ form ของ project แทน
+                                    <br/>
+                                    เช่น <code>task</code> จะ match กับ <code>task-211</code>
                                 </div>
                                 <field name="github_task_prefix" />
                             </div>
