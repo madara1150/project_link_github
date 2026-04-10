@@ -14,6 +14,7 @@
     "assets": {
         "web.assets_backend": [
             "project_github/static/src/js/github_login_widget.js",
+            "project_github/static/src/js/github_notification.js",
         ],
     },
     "data": [

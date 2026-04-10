@@ -49,6 +49,7 @@ class GithubOAuthController(http.Controller):
         # Generate a CSRF state token and store it in the server-side session
         state_token = secrets.token_urlsafe(32)
         request.session['github_oauth_state'] = state_token
+        request.session.modified = True  # ensure session is persisted before redirect
         state = json.dumps({'s': state_token, 'd': request.session.db})
 
         # Use the actual host from the browser request (supports ngrok, proxies, etc.)
@@ -76,20 +77,24 @@ class GithubOAuthController(http.Controller):
     def github_callback(self, code=None, state=None, error=None, **kwargs):
         """Handle the GitHub OAuth callback, exchange code for token, save to user."""
 
-        def _redirect_error(code):
+        def _redirect_error(msg):
+            _logger.warning("GitHub OAuth: %s (uid=%s)", msg, request.env.uid)
+            request.session['github_notification'] = {
+                'type': 'danger',
+                'title': 'GitHub Connection Failed',
+                'message': msg,
+            }
             return request.redirect(_PREFS_URL, local=False)
 
         # User denied authorization on GitHub
         if error:
-            _logger.warning("GitHub OAuth: user denied access — error=%s", error)
-            return _redirect_error('access_denied')
+            return _redirect_error('GitHub authorization was denied.')
 
         # Validate state (CSRF protection)
         try:
             state_data = json.loads(state or '{}')
         except (ValueError, TypeError):
-            _logger.warning("GitHub OAuth: malformed state parameter")
-            return _redirect_error('invalid_state')
+            return _redirect_error('Invalid OAuth state parameter. Please try again.')
 
         stored_state = request.session.pop('github_oauth_state', None)
         received_state = state_data.get('s', '')
@@ -97,17 +102,15 @@ class GithubOAuthController(http.Controller):
             stored_state.encode(),
             received_state.encode(),
         ):
-            _logger.warning(
-                "GitHub OAuth: state mismatch (possible CSRF). uid=%s", request.env.uid
+            return _redirect_error(
+                'OAuth state mismatch — possible session timeout or CSRF attempt. Please try again.'
             )
-            return _redirect_error('state_mismatch')
 
         if state_data.get('d') != request.session.db:
-            _logger.warning("GitHub OAuth: database mismatch in state. uid=%s", request.env.uid)
-            return _redirect_error('db_mismatch')
+            return _redirect_error('Database mismatch in OAuth state. Please try again.')
 
         if not code:
-            return _redirect_error('no_code')
+            return _redirect_error('No authorization code received from GitHub.')
 
         # Exchange authorization code for access token
         icp = request.env['ir.config_parameter'].sudo()
@@ -130,19 +133,26 @@ class GithubOAuthController(http.Controller):
                 headers={'Accept': 'application/json'},
                 timeout=10,
             )
-            token_resp.raise_for_status()
-            token_data = token_resp.json()
         except requests.RequestException as exc:
-            _logger.exception("GitHub OAuth: token exchange failed: %s", exc)
-            return _redirect_error('token_exchange_failed')
+            _logger.exception("GitHub OAuth: cannot reach token endpoint: %s", exc)
+            return _redirect_error(f'Cannot reach GitHub: {exc}')
 
+        if not token_resp.ok:
+            _logger.warning(
+                "GitHub OAuth: token endpoint returned HTTP %s — %s",
+                token_resp.status_code, token_resp.text[:300],
+            )
+            return _redirect_error(
+                f'GitHub returned HTTP {token_resp.status_code}. '
+                f'Check Client ID and Secret in Settings. Detail: {token_resp.text[:300]}'
+            )
+
+        token_data = token_resp.json()
         access_token = token_data.get('access_token')
         if not access_token:
-            _logger.warning(
-                "GitHub OAuth: no access_token in response — %s",
-                token_data.get('error_description', token_data),
-            )
-            return _redirect_error('no_token')
+            err_desc = token_data.get('error_description') or token_data.get('error', 'unknown error')
+            _logger.warning("GitHub OAuth: no access_token in response — %s", err_desc)
+            return _redirect_error(f'GitHub denied the request: {err_desc}')
 
         # Fetch GitHub user profile
         try:
@@ -155,11 +165,11 @@ class GithubOAuthController(http.Controller):
             github_user = user_resp.json()
         except requests.RequestException as exc:
             _logger.exception("GitHub OAuth: user info fetch failed: %s", exc)
-            return _redirect_error('user_fetch_failed')
+            return _redirect_error('Failed to fetch GitHub user profile. Please try again.')
 
         github_login = github_user.get('login')
         if not github_login:
-            return _redirect_error('no_login')
+            return _redirect_error('GitHub returned an empty username. Please try again.')
 
         # Persist token, GitHub username, and avatar URL on the current Odoo user
         try:
@@ -173,7 +183,7 @@ class GithubOAuthController(http.Controller):
                 "GitHub OAuth: failed to save token for user %s: %s",
                 request.env.user.login, exc,
             )
-            return _redirect_error('save_failed')
+            return _redirect_error('Failed to save GitHub token. Please contact your administrator.')
 
         _logger.info(
             "GitHub OAuth: Odoo user '%s' connected GitHub account '%s'.",
@@ -181,7 +191,26 @@ class GithubOAuthController(http.Controller):
             github_login,
         )
 
+        request.session['github_notification'] = {
+            'type': 'success',
+            'title': 'GitHub Connected',
+            'message': f'Successfully connected as {github_login}.',
+        }
         return request.redirect(_PREFS_URL, local=False)
+
+    # -------------------------------------------------------------------------
+    # Notification relay (read pending OAuth result from session)
+    # -------------------------------------------------------------------------
+
+    @http.route(
+        '/github/notification',
+        type='json',
+        auth='user',
+        methods=['POST'],
+    )
+    def get_notification(self, **kwargs):
+        """Pop and return any pending GitHub OAuth notification stored in the session."""
+        return request.session.pop('github_notification', None)
 
     # -------------------------------------------------------------------------
     # Repository Sync API (called from front-end buttons)

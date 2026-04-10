@@ -1,14 +1,13 @@
 /** @odoo-module **/
 
-import { CharField } from "@web/views/fields/char/char_field";
+import { Component, useState, xml } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
-import { useState } from "@odoo/owl";
-import { xml } from "@odoo/owl";
+import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
-export class GithubLoginButton extends CharField {
+export class GithubLoginButton extends Component {
     static template = xml`
         <button t-on-click="onDisconnect"
                 class="btn btn-secondary btn-sm d-inline-flex align-items-center gap-2"
@@ -21,9 +20,10 @@ export class GithubLoginButton extends CharField {
             <t t-esc="props.value"/>
         </button>
     `;
+    static props = { ...standardFieldProps };
+    static supportedTypes = ["char"];
 
     setup() {
-        super.setup();
         this.orm = useService("orm");
         this.dialog = useService("dialog");
         this.state = useState({ loading: false });
@@ -50,7 +50,4 @@ export class GithubLoginButton extends CharField {
     }
 }
 
-registry.category("fields").add("github_login_button", {
-    component: GithubLoginButton,
-    supportedTypes: ["char"],
-});
+registry.category("fields").add("github_login_button", GithubLoginButton);
