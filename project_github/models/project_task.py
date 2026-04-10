@@ -1,8 +1,11 @@
+import logging
 import re
 
 import requests
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
 
 
 class ProjectTask(models.Model):
@@ -46,6 +49,11 @@ class ProjectTask(models.Model):
         string="Can Manage GitHub Labels",
         compute="_compute_github_can_manage_pr_labels",
         store=False,
+    )
+
+    github_sync_comments = fields.Boolean(
+        string="Sync Comments to GitHub PR",
+        help="If checked, comments posted in this task will also be posted to the linked GitHub PR.",
     )
 
     github_user_connected = fields.Boolean(
@@ -236,3 +244,35 @@ class ProjectTask(models.Model):
                 "type": "warning",
             },
         }
+
+    def message_post(self, *, body='', subject=None, message_type='notification', subtype_xmlid=None, subtype_id=False, parent_id=False, attachments=None, **kwargs):
+        """Override to sync comments to GitHub PR if enabled."""
+        message = super().message_post(
+            body=body, subject=subject, message_type=message_type, subtype_xmlid=subtype_xmlid, subtype_id=subtype_id,
+            parent_id=parent_id, attachments=attachments, **kwargs
+        )
+        if self.github_sync_comments and self.github_pr_url and body:
+            self._github_post_comment_to_pr(body)
+        return message
+
+    def _github_post_comment_to_pr(self, comment_body):
+        """Post a comment to the linked GitHub PR."""
+        self.ensure_one()
+        token = self.env.user.sudo().github_access_token
+        if not token:
+            return
+        repo_full_name, pr_number = self._parse_github_pr_url(self.github_pr_url)
+        if not repo_full_name or not pr_number:
+            return
+        url = f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/comments"
+        headers = self._github_headers(token)
+        try:
+            requests.post(
+                url,
+                headers=headers,
+                json={"body": comment_body},
+                timeout=10,
+            ).raise_for_status()
+        except requests.RequestException as exc:
+            # Log error but don't fail the message post
+            _logger.warning("Failed to post comment to GitHub PR: %s", exc)
