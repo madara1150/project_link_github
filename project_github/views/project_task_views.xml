@@ -5,13 +5,41 @@
         <field name="model">project.task</field>
         <field name="inherit_id" ref="project.view_task_form2" />
         <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button
+                    name="action_github_mark_ok_to_merge"
+                    type="object"
+                    string="ผ่านการทดสอบ"
+                    class="btn-success"
+                    attrs="{
+                                    'invisible': [
+                                        ('github_can_manage_pr_labels', '=', False),
+                                        ('github_pr_state', '!=', 'open'),
+                                    ]
+                                }"
+                />
+                <button
+                    name="action_github_mark_fix"
+                    type="object"
+                    string="ไม่ผ่านการทดสอบ"
+                    class="btn-danger"
+                    attrs="{
+                                    'invisible': [
+                                        ('github_can_manage_pr_labels', '=', False),
+                                        ('github_pr_state', '!=', 'open'),
+                                    ]
+                                }"
+                />
+            </xpath>
             <xpath expr="//notebook" position="inside">
                 <page string="GitHub PR" name="github_pr">
                     <group>
                         <group string="Pull Request Info">
                             <field name="github_pr_url" widget="url" readonly="1" />
                             <field name="github_pr_number" />
-                            <field name="github_pr_state"
+                            <field name="github_can_manage_pr_labels" invisible="1" />
+                            <field
+                                name="github_pr_state"
                                 widget="badge"
                                 decoration-success="github_pr_state == 'merged'"
                                 decoration-info="github_pr_state == 'open'"
