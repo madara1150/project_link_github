@@ -48,6 +48,12 @@ class ProjectTask(models.Model):
         store=False,
     )
 
+    github_user_connected = fields.Boolean(
+        string="GitHub User Connected",
+        compute="_compute_github_user_connected",
+        store=False,
+    )
+
     @api.depends("github_pr_description")
     def _compute_github_pr_description_html(self):
         try:
@@ -76,6 +82,11 @@ class ProjectTask(models.Model):
             task.github_can_manage_pr_labels = bool(
                 task.github_pr_url and self._github_current_user_can_manage_repo(task)
             )
+
+    @api.depends()
+    def _compute_github_user_connected(self):
+        for task in self:
+            task.github_user_connected = self.env.user.github_connected
 
     def _parse_github_pr_url(self, pr_url):
         """Return (repo_full_name, pr_number) from a GitHub PR URL."""
