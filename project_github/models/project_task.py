@@ -36,6 +36,11 @@ class ProjectTask(models.Model):
         string="GitHub PR State",
         readonly=True,
     )
+    github_pr_labels = fields.Text(
+        string="GitHub PR Labels",
+        readonly=True,
+        help="Labels on the linked GitHub pull request.",
+    )
 
     github_can_manage_pr_labels = fields.Boolean(
         string="Can Manage GitHub Labels",

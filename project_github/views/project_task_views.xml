@@ -37,6 +37,7 @@
                         <group string="Pull Request Info">
                             <field name="github_pr_url" widget="url" readonly="1" />
                             <field name="github_pr_number" />
+                            <field name="github_pr_labels" readonly="1"/>
                             <field name="github_can_manage_pr_labels" invisible="1" />
                             <field
                                 name="github_pr_state"

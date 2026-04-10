@@ -93,11 +93,15 @@ class GithubWebhookController(http.Controller):
         if pr_state == "closed" and pr_data.get("merged_at"):
             pr_state = "merged"
 
+        labels = pr_data.get("labels", [])
+        label_names = [label.get("name") for label in labels if label.get("name")]
+
         pr_vals = {
             "github_pr_url": pr_url,
             "github_pr_description": description,
             "github_pr_number": pr_number,
             "github_pr_state": pr_state,
+            "github_pr_labels": ", ".join(label_names),
         }
 
         # --- Per-project matching: repo → project → prefix → task key ---
