@@ -1,7 +1,7 @@
 {
     "name": "Project GitHub Integration",
     "summary": "เชื่อม GitHub Pull Request กับ project.task อัตโนมัติผ่าน Webhook",
-    "version": "16.0.2.0.0",
+    "version": "16.0.3.0.0",
     "category": "Project Management",
     "author": "Aginix Technologies",
     "website": "https://github.com/madara1150/project_link_github",
@@ -23,5 +23,7 @@
         "views/res_config_settings_views.xml",
         "views/res_users_views.xml",
         "views/github_repository_views.xml",
+        "views/project_project_views.xml",
+        "wizard/github_repo_selector_views.xml",
     ],
 }

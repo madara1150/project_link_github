@@ -71,12 +71,12 @@
                         <div class="col-12 col-lg-6 o_setting_box">
                             <div class="o_setting_left_pane" />
                             <div class="o_setting_right_pane">
-                                <label for="github_task_prefix" string="Task Reference Prefix" />
+                                <label for="github_task_prefix" string="Task Reference Prefix (Fallback)" />
                                 <div class="text-muted">
-                                    Prefix ที่ใช้ใน PR description เช่น
-                                    <code>task</code>
-                                    จะ match กับ
-                                    <code>task-211</code>
+                                    ใช้เมื่อ repo ไม่ได้ link กับ project ใดๆ
+                                    — ถ้า repo ถูก link กับ project แล้ว ให้ตั้ง prefix ที่ form ของ project แทน
+                                    <br/>
+                                    เช่น <code>task</code> จะ match กับ <code>task-211</code>
                                 </div>
                                 <field name="github_task_prefix" />
                             </div>

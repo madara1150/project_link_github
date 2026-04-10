@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_github_repo_selector_form" model="ir.ui.view">
+        <field name="name">github.repo.selector.form</field>
+        <field name="model">github.repo.selector</field>
+        <field name="arch" type="xml">
+            <form string="Select GitHub Repositories">
+                <field name="project_id" invisible="1"/>
+                <field name="available_repo_ids" invisible="1"/>
+                <field name="repository_ids" nolabel="1">
+                    <tree>
+                        <field name="full_name"/>
+                        <field name="description"/>
+                        <field name="private" widget="boolean_toggle"/>
+                        <field name="default_branch"/>
+                    </tree>
+                </field>
+                <footer>
+                    <button name="action_confirm"
+                            string="Confirm"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Cancel" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

@@ -44,7 +44,8 @@ class GithubWebhookController(http.Controller):
             return request.make_json_response({"status": "ignored", "action": action})
 
         pr_data = payload.get("pull_request", {})
-        updated_ids = self._process_pull_request(pr_data)
+        repo_full_name = payload.get("repository", {}).get("full_name", "")
+        updated_ids = self._process_pull_request(pr_data, repo_full_name)
 
         return request.make_json_response(
             {"status": "ok", "updated_task_ids": updated_ids}
@@ -75,8 +76,11 @@ class GithubWebhookController(http.Controller):
         received = signature_header[len("sha256="):]
         return hmac.compare_digest(expected, received)
 
-    def _process_pull_request(self, pr_data):
+    def _process_pull_request(self, pr_data, repo_full_name):
         """ค้นหา task จาก PR description แล้วอัปเดต GitHub fields
+
+        ถ้า repo ถูก link กับ project → ใช้ per-project prefix + task key
+        ถ้าไม่ → fallback ใช้ global prefix + task database ID
 
         Returns:
             list[int] - database IDs ของ task ที่ถูกอัปเดต
@@ -89,13 +93,82 @@ class GithubWebhookController(http.Controller):
         if pr_state == "closed" and pr_data.get("merged_at"):
             pr_state = "merged"
 
+        pr_vals = {
+            "github_pr_url": pr_url,
+            "github_pr_description": description,
+            "github_pr_number": pr_number,
+            "github_pr_state": pr_state,
+        }
+
+        # --- Per-project matching: repo → project → prefix → task key ---
+        linked_repos = (
+            request.env["github.repository"]
+            .sudo()
+            .search([
+                ("full_name", "=", repo_full_name),
+                ("project_id", "!=", False),
+            ])
+        )
+
+        if linked_repos:
+            return self._match_by_project(
+                linked_repos, description, pr_number, pr_vals
+            )
+
+        # --- Fallback: global prefix + database ID (old behavior) ---
+        return self._match_by_global_prefix(description, pr_number, pr_vals)
+
+    def _match_by_project(self, linked_repos, description, pr_number, pr_vals):
+        """Match tasks using per-project prefix and task key."""
+        all_updated = []
+        Task = request.env["project.task"].sudo()
+
+        for repo in linked_repos:
+            project = repo.project_id
+            prefix = project.github_task_prefix
+            if not prefix:
+                _logger.info(
+                    "GitHub webhook: project '%s' has no github_task_prefix, skipping",
+                    project.display_name,
+                )
+                continue
+
+            pattern = rf"(?i)\b{re.escape(prefix)}-(\d+)\b"
+            matches = re.findall(pattern, description)
+            if not matches:
+                continue
+
+            # Construct task keys: project.key + number
+            task_keys = [f"{project.key}-{m}" for m in set(matches)]
+            tasks = Task.search([("key", "in", task_keys)])
+
+            if not tasks:
+                _logger.info(
+                    "GitHub webhook: no tasks found for keys %s (PR #%s)",
+                    task_keys,
+                    pr_number,
+                )
+                continue
+
+            tasks.write(pr_vals)
+            _logger.info(
+                "GitHub webhook: updated task(s) %s (keys %s) from PR #%s",
+                tasks.ids,
+                task_keys,
+                pr_number,
+            )
+            all_updated.extend(tasks.ids)
+
+        return all_updated
+
+    def _match_by_global_prefix(self, description, pr_number, pr_vals):
+        """Fallback: match tasks using global prefix and database ID."""
         prefix = (
             request.env["ir.config_parameter"]
             .sudo()
             .get_param("kmitl_project_github.task_prefix", "task")
         )
 
-        # Match "task-211" or "TASK-211" → task database id = 211
         pattern = rf"(?i)\b{re.escape(prefix)}-(\d+)\b"
         matches = re.findall(pattern, description)
         if not matches:
@@ -103,14 +176,9 @@ class GithubWebhookController(http.Controller):
                 "GitHub webhook: no task reference found in PR #%s", pr_number
             )
             return []
-        _logger.info(
-                "=====================================> Math ========>#%s", pr_number
-            )
+
         task_ids = list({int(m) for m in matches})
         tasks = request.env["project.task"].sudo().browse(task_ids).exists()
-        _logger.info(
-                "=====================================> PROJECT มีไหม ========>#%s", tasks
-            )
 
         if not tasks:
             _logger.info(
@@ -119,30 +187,11 @@ class GithubWebhookController(http.Controller):
                 pr_number,
             )
             return []
+
+        tasks.write(pr_vals)
         _logger.info(
-                "=====================================> github_pr_url มีไหม ========>#%s", pr_url
-            )
-        _logger.info(
-                "=====================================> description มีไหม ========>#%s", description
-            )
-        _logger.info(
-                "=====================================> github_pr_number มีไหม ========>#%s", pr_number
-            )
-        _logger.info(
-                "=====================================> pr_state มีไหม ========>#%s", pr_state
-            )
-        tasks.write(
-            {
-                "github_pr_url": pr_url,
-                "github_pr_description": description,
-                "github_pr_number": pr_number,
-                "github_pr_state": pr_state,
-            }
-        )
-        _logger.info(
-            "GitHub webhook: updated task(s) %s from PR #%s (%s)",
+            "GitHub webhook: updated task(s) %s from PR #%s (fallback global prefix)",
             tasks.ids,
             pr_number,
-            pr_url,
         )
         return tasks.ids

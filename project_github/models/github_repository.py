@@ -1,8 +1,8 @@
 import logging
+from datetime import datetime
 
 import requests
-
-from odoo import fields, models, _
+from odoo import _, fields, models
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
@@ -56,6 +56,15 @@ class GithubRepository(models.Model):
     def _github_headers(self, token):
         return {**_GITHUB_HEADERS, 'Authorization': f'Bearer {token}'}
 
+    def _parse_github_datetime(self, dt_str):
+        """Parse GitHub ISO datetime string to Odoo format."""
+        if not dt_str:
+            return False
+        if dt_str.endswith('Z'):
+            dt_str = dt_str[:-1] + '+00:00'
+        dt = datetime.fromisoformat(dt_str)
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+
     def _sync_from_api(self, user, repos_data):
         """Upsert github.repository records from a list of GitHub API repo dicts."""
         existing = self.search([('user_id', '=', user.id)])
@@ -73,7 +82,7 @@ class GithubRepository(models.Model):
                 'private': repo.get('private', False),
                 'html_url': repo.get('html_url', ''),
                 'default_branch': repo.get('default_branch', 'main'),
-                'updated_at': (repo.get('updated_at') or '').replace('Z', '') or False,
+                'updated_at': self._parse_github_datetime(repo.get('updated_at')),
                 'user_id': user.id,
             }
             if github_id in existing_by_github_id:
@@ -142,7 +151,7 @@ class GithubRepository(models.Model):
             'private': data.get('private', self.private),
             'html_url': data.get('html_url', self.html_url),
             'default_branch': data.get('default_branch', self.default_branch),
-            'updated_at': (data.get('updated_at') or '').replace('Z', '') or False,
+            'updated_at': self._parse_github_datetime(data.get('updated_at')),
         })
 
         return {
