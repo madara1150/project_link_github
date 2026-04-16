@@ -42,10 +42,22 @@ class ResUsers(models.Model):
 
     @api.depends('github_access_token')
     def _compute_github_connected(self):
+        """Return True when the user has a stored GitHub access token.
+
+        sudo() is required because github_access_token is restricted to
+        base.group_system — regular users cannot read their own token directly.
+        The computed field is readable by the user themselves via SELF_READABLE_FIELDS.
+        """
         for user in self:
             user.github_connected = bool(user.sudo().github_access_token)
 
     def action_github_disconnect(self):
+        """Clear all stored GitHub credentials for this user.
+
+        Security: a user may only disconnect their own account unless they
+        are an administrator. Clears token, login, and avatar in a single write
+        so the user record is never left in a partial state.
+        """
         self.ensure_one()
         if self.env.uid != self.id and not self.env.user._is_admin():
             raise AccessError("You can only disconnect your own GitHub account.")

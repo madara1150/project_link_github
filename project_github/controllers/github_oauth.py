@@ -75,7 +75,19 @@ class GithubOAuthController(http.Controller):
         website=False,
     )
     def github_callback(self, code=None, state=None, error=None, **kwargs):
-        """Handle the GitHub OAuth callback, exchange code for token, save to user."""
+        """Handle the GitHub OAuth callback and persist the access token.
+
+        GitHub redirects the user here after they approve (or deny) authorization.
+        Steps performed on success:
+          1. Validate the `state` parameter against the session (CSRF protection)
+          2. Exchange the one-time `code` for a long-lived access token
+          3. Fetch the GitHub user profile (login + avatar)
+          4. Save token, login, and avatar on the current Odoo user record
+          5. Store a success/error notification in the session for the JS layer
+
+        On any failure the user is redirected to _PREFS_URL with a danger
+        notification queued in the session.
+        """
 
         def _redirect_error(msg):
             _logger.warning("GitHub OAuth: %s (uid=%s)", msg, request.env.uid)
@@ -233,7 +245,18 @@ class GithubOAuthController(http.Controller):
         return {'synced': len(repos)}
 
     def _fetch_all_repos(self, token):
-        """Paginate through all repos accessible by the authenticated user."""
+        """Fetch every repository accessible by the authenticated user (paginated).
+
+        Uses the GitHub List repositories for authenticated user API with
+        per_page=100 (maximum). Pagination stops when an empty page is returned
+        or a network error occurs (partial results are still returned).
+
+        Args:
+            token (str): GitHub access token for the current user.
+
+        Returns:
+            list[dict]: Raw GitHub API repository objects.
+        """
         repos = []
         page = 1
         headers = {**_GITHUB_API_HEADERS, 'Authorization': f'Bearer {token}'}
@@ -248,10 +271,10 @@ class GithubOAuthController(http.Controller):
                 resp.raise_for_status()
             except requests.RequestException as exc:
                 _logger.exception("GitHub: repo list page %s failed: %s", page, exc)
-                break
+                break  # Return whatever we fetched so far
             batch = resp.json()
             if not batch:
-                break
+                break  # Empty page = no more results
             repos.extend(batch)
             page += 1
         return repos

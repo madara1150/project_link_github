@@ -28,7 +28,18 @@ class ProjectProject(models.Model):
     )
 
     def action_sync_and_link_repos(self):
-        """Sync repos from GitHub then open the selector wizard."""
+        """Sync the user's GitHub repositories then open the repo-selector wizard.
+
+        Flow:
+          1. Fetch all accessible repos from GitHub API (paginated)
+          2. Upsert into github.repository records for the current user
+          3. Open the github.repo.selector wizard pre-filled with:
+               - available_repo_ids: repos owned by this user (unlinked OR already
+                 linked to this project) so the user sees the full selectable list
+               - repository_ids: repos currently linked to this project (pre-checked)
+
+        Raises UserError if the current user has not connected their GitHub account.
+        """
         self.ensure_one()
         user = self.env.user
         token = user.sudo().github_access_token
@@ -38,15 +49,15 @@ class ProjectProject(models.Model):
                   "Connect it from your profile settings.")
             )
 
-        # Fetch and sync repos
+        # Step 1 & 2 — fetch from GitHub and upsert local records
         repos_data = self._fetch_github_repos(token)
         self.env["github.repository"].sudo()._sync_from_api(user, repos_data)
 
-        # Pre-select repos already linked to this project
+        # Step 3 — build wizard with pre-selected repos
         already_linked = self.env["github.repository"].search([
             ("project_id", "=", self.id),
         ])
-        # Show repos belonging to current user that are either unlinked or linked to this project
+        # Include unlinked repos and repos already tied to this project
         available_repos = self.env["github.repository"].search([
             ("user_id", "=", user.id),
             "|",
@@ -71,7 +82,19 @@ class ProjectProject(models.Model):
 
     @staticmethod
     def _fetch_github_repos(token):
-        """Paginate through all repos accessible by the authenticated user."""
+        """Fetch every repository accessible by the authenticated user (paginated).
+
+        Note: This method contains the same pagination logic as
+        GithubOAuthController._fetch_all_repos(). They are kept separate because
+        one runs in a controller context (request.env) and the other in a model
+        context (self.env), which makes sharing a utility non-trivial in Odoo.
+
+        Args:
+            token (str): GitHub access token.
+
+        Returns:
+            list[dict]: Raw GitHub API repository objects.
+        """
         repos = []
         page = 1
         headers = {**_GITHUB_API_HEADERS, "Authorization": f"Bearer {token}"}
@@ -85,13 +108,11 @@ class ProjectProject(models.Model):
                 )
                 resp.raise_for_status()
             except requests.RequestException as exc:
-                _logger.exception(
-                    "GitHub: repo list page %s failed: %s", page, exc
-                )
-                break
+                _logger.exception("GitHub: repo list page %s failed: %s", page, exc)
+                break  # Return whatever was fetched so far
             batch = resp.json()
             if not batch:
-                break
+                break  # Empty page = no more results
             repos.extend(batch)
             page += 1
         return repos
