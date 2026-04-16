@@ -1,3 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_github_repository_user,github_repository_user,model_github_repository,base.group_user,1,1,1,1
 access_github_repo_selector_user,github_repo_selector_user,model_github_repo_selector,base.group_user,1,1,1,1
+access_github_create_pr_wizard_user,github_create_pr_wizard_user,model_github_create_pr_wizard,base.group_user,1,1,1,1

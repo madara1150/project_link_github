@@ -305,6 +305,42 @@ class ProjectTask(models.Model):
     # Public actions (called from buttons in the view)
     # ------------------------------------------------------------------
 
+    def action_open_create_pr_wizard(self):
+        """Open the Create PR wizard pre-filled with data from this task.
+
+        Linked repositories are scoped to the task's project so the user
+        can only pick repos that are already tracked by the project.
+        """
+        self.ensure_one()
+
+        # Repos linked to this task's project
+        linked_repos = self.env["github.repository"].search([
+            ("project_id", "=", self.project_id.id),
+        ])
+
+        task_key = self.key if hasattr(self, "key") and self.key else ""
+        slug = re.sub(r"[^a-z0-9]+", "-", (self.name or "").lower()).strip("-")[:50]
+        branch_name = f"feat/{task_key}-{slug}" if task_key else f"feat/{slug}"
+        pr_body = "## Related Tasks\n" + (task_key + "\n" if task_key else "")
+
+        wizard = self.env["github.create.pr.wizard"].create({
+            "task_id": self.id,
+            "available_repository_ids": [(6, 0, linked_repos.ids)],
+            "repository_id": linked_repos[:1].id if linked_repos else False,
+            "branch_name": branch_name,
+            "pr_title": self.name or "",
+            "pr_body": pr_body,
+        })
+
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Create GitHub PR"),
+            "res_model": "github.create.pr.wizard",
+            "res_id": wizard.id,
+            "view_mode": "form",
+            "target": "new",
+        }
+
     def action_github_mark_ok_to_merge(self):
         self._github_update_pr_labels("ok-to-merge", "fix")
         return {
