@@ -54,10 +54,18 @@ class GithubRepository(models.Model):
     ]
 
     def _github_headers(self, token):
+        """Return GitHub API request headers with Bearer token authentication."""
         return {**_GITHUB_HEADERS, 'Authorization': f'Bearer {token}'}
 
     def _parse_github_datetime(self, dt_str):
-        """Parse GitHub ISO datetime string to Odoo format."""
+        """Convert a GitHub ISO 8601 datetime string to Odoo's datetime format.
+
+        GitHub returns timestamps like '2024-01-15T10:30:00Z'. Python's
+        fromisoformat() doesn't accept the trailing 'Z' before 3.11, so
+        we normalise it to '+00:00' first.
+
+        Returns False for absent or empty values (safe to pass to Datetime fields).
+        """
         if not dt_str:
             return False
         if dt_str.endswith('Z'):
@@ -66,8 +74,18 @@ class GithubRepository(models.Model):
         return dt.strftime('%Y-%m-%d %H:%M:%S')
 
     def _sync_from_api(self, user, repos_data):
-        """Upsert github.repository records from a list of GitHub API repo dicts."""
+        """Upsert github.repository records from a GitHub API repo list.
+
+        Fetches all existing records for the user once, then for each repo
+        in repos_data either updates the existing record (matched by github_id)
+        or creates a new one. This avoids N+1 queries during bulk sync.
+
+        Args:
+            user       (res.users): The Odoo user who owns the repositories.
+            repos_data (list[dict]): Raw GitHub API repository objects.
+        """
         existing = self.search([('user_id', '=', user.id)])
+        # Index existing records by GitHub repo ID for O(1) lookup
         existing_by_github_id = {r.github_id: r for r in existing}
 
         for repo in repos_data:
@@ -91,7 +109,12 @@ class GithubRepository(models.Model):
                 self.create(vals)
 
     def action_push_description_to_github(self):
-        """Push the description field to GitHub via PATCH /repos/{full_name}."""
+        """Push the local description field to GitHub via PATCH /repos/{full_name}.
+
+        Raises UserError with an actionable message for common HTTP errors:
+          403 — token lacks 'repo' scope or user is not an admin of the repo
+          404 — repository no longer exists on GitHub
+        """
         self.ensure_one()
         token = self.user_id.sudo().github_access_token
         if not token:

@@ -7,6 +7,19 @@ import { _t } from "@web/core/l10n/translation";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
+/**
+ * OWL field widget that displays the GitHub connection status on the user form.
+ *
+ * Renders as a button showing either:
+ *   - The user's GitHub avatar (20x20, circular) + their GitHub username, OR
+ *   - A GitHub icon + the username if no avatar URL is stored
+ *
+ * Clicking the button opens a confirmation dialog before calling
+ * action_github_disconnect() on the server to clear the stored token.
+ *
+ * Registration: registered as the "github_login_button" field widget so it can
+ * be referenced from views with widget="github_login_button".
+ */
 export class GithubLoginButton extends Component {
     static template = xml`
         <button t-on-click="onDisconnect"
@@ -26,13 +39,19 @@ export class GithubLoginButton extends Component {
     setup() {
         this.orm = useService("orm");
         this.dialog = useService("dialog");
+        // loading flag prevents double-clicks during the async disconnect call
         this.state = useState({ loading: false });
     }
 
+    /** Return the GitHub avatar URL from the current record, or empty string. */
     get avatarUrl() {
         return this.props.record.data.github_avatar_url || '';
     }
 
+    /**
+     * Show a confirmation dialog, then call action_github_disconnect() on the
+     * server and reload the record so the UI reflects the cleared fields.
+     */
     onDisconnect() {
         this.dialog.add(ConfirmationDialog, {
             body: _t("This will remove your stored GitHub token. Are you sure?"),
