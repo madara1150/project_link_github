@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_github_create_pr_wizard_form" model="ir.ui.view">
+        <field name="name">github.create.pr.wizard.form</field>
+        <field name="model">github.create.pr.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Create GitHub Branch &amp; Pull Request">
+                <field name="task_id" invisible="1"/>
+                <field name="available_repository_ids" invisible="1"/>
+                <group>
+                    <group string="Repository">
+                        <field
+                            name="repository_id"
+                            options="{'no_create': True, 'no_open': True}"
+                            domain="[('id', 'in', available_repository_ids)]"
+                        />
+                        <field name="base_branch" />
+                    </group>
+                    <group string="Branch &amp; PR">
+                        <field name="branch_name" />
+                        <field name="pr_title" />
+                    </group>
+                </group>
+                <group string="PR Description">
+                    <field name="pr_body" nolabel="1" />
+                </group>
+                <footer>
+                    <button
+                        name="action_create_pr"
+                        string="Create PR"
+                        type="object"
+                        class="btn-primary"
+                    />
+                    <button string="Cancel" special="cancel" />
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

@@ -25,5 +25,6 @@
         "views/github_repository_views.xml",
         "views/project_project_views.xml",
         "wizard/github_repo_selector_views.xml",
+        "wizard/create_pr_wizard_views.xml",
     ],
 }
