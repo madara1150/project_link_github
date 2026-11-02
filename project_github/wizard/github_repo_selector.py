@@ -30,10 +30,7 @@ class GithubRepoSelector(models.TransientModel):
         selected = self.repository_ids
 
         # Repos previously linked to this project but now deselected → clear project_id
-        previously_linked = self.env["github.repository"].search([
-            ("project_id", "=", project.id),
-        ])
-        to_unlink = previously_linked - selected
+        to_unlink = project.github_repository_ids - selected
         if to_unlink:
             to_unlink.write({"project_id": False})
 

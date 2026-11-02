@@ -3,15 +3,11 @@ from datetime import datetime
 
 import requests
 from odoo import _, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
+
+from ..utils import github_request, notification_action
 
 _logger = logging.getLogger(__name__)
-
-GITHUB_API_REPO = 'https://api.github.com/repos/{full_name}'
-_GITHUB_HEADERS = {
-    'Accept': 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-}
 
 
 class GithubRepository(models.Model):
@@ -23,7 +19,7 @@ class GithubRepository(models.Model):
     # --- GitHub Data ---
     github_id = fields.Integer(string='GitHub Repo ID', readonly=True, index=True)
     name = fields.Char(string='Repository Name', readonly=True)
-    full_name = fields.Char(string='Full Name', readonly=True, help='e.g. owner/repo-name')
+    full_name = fields.Char(string='Full Name', readonly=True, index=True, help='e.g. owner/repo-name')
     description = fields.Text(string='Description')
     private = fields.Boolean(string='Private', readonly=True)
     html_url = fields.Char(string='GitHub URL', readonly=True)
@@ -53,10 +49,6 @@ class GithubRepository(models.Model):
         ),
     ]
 
-    def _github_headers(self, token):
-        """Return GitHub API request headers with Bearer token authentication."""
-        return {**_GITHUB_HEADERS, 'Authorization': f'Bearer {token}'}
-
     def _parse_github_datetime(self, dt_str):
         """Convert a GitHub ISO 8601 datetime string to Odoo's datetime format.
 
@@ -72,6 +64,18 @@ class GithubRepository(models.Model):
             dt_str = dt_str[:-1] + '+00:00'
         dt = datetime.fromisoformat(dt_str)
         return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+    def _prepare_vals_from_api(self, repo):
+        """Map a raw GitHub API repository object to field values."""
+        return {
+            'name': repo.get('name', ''),
+            'full_name': repo.get('full_name', ''),
+            'description': repo.get('description') or '',
+            'private': repo.get('private', False),
+            'html_url': repo.get('html_url', ''),
+            'default_branch': repo.get('default_branch', 'main'),
+            'updated_at': self._parse_github_datetime(repo.get('updated_at')),
+        }
 
     def _sync_from_api(self, user, repos_data):
         """Upsert github.repository records from a GitHub API repo list.
@@ -92,101 +96,59 @@ class GithubRepository(models.Model):
             github_id = repo.get('id')
             if not github_id:
                 continue
-            vals = {
-                'github_id': github_id,
-                'name': repo.get('name', ''),
-                'full_name': repo.get('full_name', ''),
-                'description': repo.get('description') or '',
-                'private': repo.get('private', False),
-                'html_url': repo.get('html_url', ''),
-                'default_branch': repo.get('default_branch', 'main'),
-                'updated_at': self._parse_github_datetime(repo.get('updated_at')),
-                'user_id': user.id,
-            }
+            vals = self._prepare_vals_from_api(repo)
             if github_id in existing_by_github_id:
                 existing_by_github_id[github_id].write(vals)
             else:
-                self.create(vals)
+                self.create({**vals, 'github_id': github_id, 'user_id': user.id})
 
-    def action_push_description_to_github(self):
-        """Push the local description field to GitHub via PATCH /repos/{full_name}.
+    def _github_repo_request(self, method, **kwargs):
+        """Call /repos/{full_name} with the token of the repository owner.
 
-        Raises UserError with an actionable message for common HTTP errors:
-          403 — token lacks 'repo' scope or user is not an admin of the repo
-          404 — repository no longer exists on GitHub
+        github.repository records are readable by every internal user, so only
+        the owner may act on them; otherwise anyone could borrow the owner's
+        token by opening their record.
+
+        Raises:
+            AccessError: If the current user does not own this record.
+            UserError:   With an actionable message for common failures:
+                403 — token lacks 'repo' scope or user is not an admin of the repo
+                404 — repository no longer exists on GitHub
         """
         self.ensure_one()
+        if self.user_id != self.env.user:
+            raise AccessError(_("Only the owner of this record can use it to call GitHub."))
+
         token = self.user_id.sudo().github_access_token
         if not token:
             raise UserError(_("Your GitHub account is not connected. Connect it from your profile settings."))
 
-        url = GITHUB_API_REPO.format(full_name=self.full_name)
         try:
-            resp = requests.patch(
-                url,
-                json={'description': self.description or ''},
-                headers=self._github_headers(token),
-                timeout=15,
-            )
-            resp.raise_for_status()
-        except requests.HTTPError as exc:
-            status = exc.response.status_code
-            if status == 403:
-                raise UserError(_(
-                    "GitHub returned 403 Forbidden. "
-                    "The token may lack 'repo' scope or you don't have admin access to this repository."
-                ))
-            if status == 404:
-                raise UserError(_("Repository '%s' not found on GitHub.", self.full_name))
-            raise UserError(_("GitHub API error (%s): %s", status, exc))
+            resp = github_request(method, f'/repos/{self.full_name}', token, **kwargs)
         except requests.RequestException as exc:
             raise UserError(_("Network error contacting GitHub: %s", exc))
 
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Success'),
-                'message': _("Description updated on GitHub."),
-                'type': 'success',
-                'sticky': False,
-            },
-        }
+        if resp.status_code == 403:
+            raise UserError(_(
+                "GitHub returned 403 Forbidden. "
+                "The token may lack 'repo' scope or you don't have admin access to this repository."
+            ))
+        if resp.status_code == 404:
+            raise UserError(_("Repository '%s' not found on GitHub.", self.full_name))
+        if not resp.ok:
+            raise UserError(_("GitHub API error (%s): %s", resp.status_code, resp.reason))
+        return resp
+
+    def action_push_description_to_github(self):
+        """Push the local description field to GitHub via PATCH /repos/{full_name}."""
+        self._github_repo_request('PATCH', json={'description': self.description or ''})
+        return notification_action(_('Success'), _("Description updated on GitHub."))
 
     def action_sync_this_repo(self):
         """Re-fetch this specific repo from the GitHub API and refresh fields."""
-        self.ensure_one()
-        token = self.user_id.sudo().github_access_token
-        if not token:
-            raise UserError(_("GitHub account not connected."))
-
-        url = GITHUB_API_REPO.format(full_name=self.full_name)
-        try:
-            resp = requests.get(url, headers=self._github_headers(token), timeout=10)
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            raise UserError(_("GitHub API error: %s", exc))
-
-        data = resp.json()
-        self.write({
-            'name': data.get('name', self.name),
-            'description': data.get('description') or '',
-            'private': data.get('private', self.private),
-            'html_url': data.get('html_url', self.html_url),
-            'default_branch': data.get('default_branch', self.default_branch),
-            'updated_at': self._parse_github_datetime(data.get('updated_at')),
-        })
-
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Refreshed'),
-                'message': _("Repository data refreshed from GitHub."),
-                'type': 'success',
-                'sticky': False,
-            },
-        }
+        resp = self._github_repo_request('GET')
+        self.write(self._prepare_vals_from_api(resp.json()))
+        return notification_action(_('Refreshed'), _("Repository data refreshed from GitHub."))
 
     def action_open_on_github(self):
         """Open the repository on GitHub in a new browser tab."""

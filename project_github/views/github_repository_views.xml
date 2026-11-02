@@ -123,4 +123,32 @@
             </search>
         </field>
     </record>
+
+    <!-- Action: list GitHub repositories filtered to the current user -->
+    <record id="action_github_repository" model="ir.actions.act_window">
+        <field name="name">GitHub Repositories</field>
+        <field name="res_model">github.repository</field>
+        <field name="view_mode">tree,form</field>
+        <field name="domain">[('user_id', '=', uid)]</field>
+        <field name="context">{'default_user_id': uid}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No repositories yet!
+            </p>
+            <p>
+                Connect your GitHub account from <b>Preferences</b>, then click
+                <b>Sync &amp; Link Repos</b> in the <b>GitHub</b> tab of a project.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu item under Project app -->
+    <menuitem
+        id="menu_github_repository"
+        name="GitHub Repositories"
+        parent="project.menu_main_pm"
+        action="action_github_repository"
+        sequence="100"
+        groups="base.group_user"
+    />
 </odoo>

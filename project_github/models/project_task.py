@@ -1,12 +1,27 @@
-import html
 import logging
 import re
 
 import requests
+from markupsafe import Markup
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
+from odoo.tools import html2plaintext, html_sanitize
+
+from ..utils import PARAM_TASK_PREFIX, github_request, notification_action
+
+try:
+    import markdown
+except ImportError:
+    markdown = None
 
 _logger = logging.getLogger(__name__)
+
+if markdown is None:
+    _logger.warning(
+        "project_github: 'markdown' library not installed — "
+        "PR descriptions will render as plain text. "
+        "Install it with: pip install markdown"
+    )
 
 # -----------------------------------------------------------------------
 # Label definitions used when creating/adding labels on GitHub PRs.
@@ -25,6 +40,32 @@ _PR_LABEL_DEFINITIONS = {
 }
 
 
+def _render_pr_description(description):
+    """Convert a raw PR description (Markdown) to HTML that is safe to display.
+
+    The description is written by anyone able to open a PR and the target field
+    has sanitize=False, so the Markdown output must be sanitized here: Markdown
+    lets raw HTML through. If `markdown` is not installed, the text is escaped
+    instead.
+    """
+    if not description:
+        return False
+    if markdown is None:
+        return Markup('<div style="white-space:pre-wrap;word-wrap:break-word">%s</div>') % description
+    return html_sanitize(
+        markdown.markdown(description, extensions=["nl2br", "fenced_code", "tables"])
+    )
+
+
+def _find_task_numbers(prefix, text):
+    """Return the numbers referenced as `{prefix}-{number}` in text.
+
+    The match is case-insensitive and on whole words, e.g. "PROJ-42".
+    """
+    pattern = rf"(?i)\b{re.escape(prefix)}-(\d+)\b"
+    return {int(number) for number in re.findall(pattern, text)}
+
+
 class ProjectTask(models.Model):
     _inherit = "project.task"
 
@@ -39,9 +80,9 @@ class ProjectTask(models.Model):
         help="Description จาก GitHub PR (อัปเดตอัตโนมัติจาก webhook)",
     )
     github_pr_description_html = fields.Html(
-        string="GitHub PR Description",
+        string="GitHub PR Description (Rendered)",
         compute="_compute_github_pr_description_html",
-        sanitize=False,
+        sanitize=False,  # sanitized by _render_pr_description()
     )
     github_pr_number = fields.Integer(
         string="GitHub PR Number",
@@ -82,47 +123,24 @@ class ProjectTask(models.Model):
 
     @api.depends("github_pr_description")
     def _compute_github_pr_description_html(self):
-        """Convert raw PR description (Markdown) to HTML for display.
-
-        Primary path  : uses the `markdown` library with nl2br, fenced_code,
-                        and tables extensions.
-        Fallback path : if `markdown` is not installed, wraps the plain text
-                        in a pre-wrap <div>. HTML characters are escaped to
-                        prevent XSS.
-        """
-        try:
-            import markdown as md_lib
-            for task in self:
-                if task.github_pr_description:
-                    task.github_pr_description_html = md_lib.markdown(
-                        task.github_pr_description,
-                        extensions=["nl2br", "fenced_code", "tables"],
-                    )
-                else:
-                    task.github_pr_description_html = False
-        except ImportError:
-            _logger.warning(
-                "project_github: 'markdown' library not installed — "
-                "PR descriptions will render as plain text. "
-                "Install it with: pip install markdown"
-            )
-            for task in self:
-                desc = task.github_pr_description or ""
-                # html.escape() prevents XSS when raw PR content contains HTML/JS
-                safe_desc = html.escape(desc)
-                task.github_pr_description_html = (
-                    f'<div style="white-space:pre-wrap;word-wrap:break-word">{safe_desc}</div>'
-                )
+        for task in self:
+            task.github_pr_description_html = _render_pr_description(task.github_pr_description)
 
     @api.depends("github_pr_url")
+    @api.depends_context("uid")
     def _compute_github_can_manage_pr_labels(self):
-        """Check whether the current user has push/admin access to the linked repo."""
-        for task in self:
-            task.github_can_manage_pr_labels = bool(
-                task.github_pr_url and self._github_current_user_can_manage_repo(task)
-            )
+        """Check whether the current user has push/admin access to the linked repo.
 
-    @api.depends()
+        Each repository is only checked once, whatever the number of tasks.
+        """
+        access_by_repo = {}
+        for task in self:
+            repo_full_name = self._parse_github_pr_url(task.github_pr_url)[0]
+            if repo_full_name and repo_full_name not in access_by_repo:
+                access_by_repo[repo_full_name] = self._github_can_manage_repo(repo_full_name)
+            task.github_can_manage_pr_labels = access_by_repo.get(repo_full_name, False)
+
+    @api.depends_context("uid")
     def _compute_github_user_connected(self):
         for task in self:
             task.github_user_connected = self.env.user.github_connected
@@ -150,46 +168,159 @@ class ProjectTask(models.Model):
             int(match.group('number')),
         )
 
-    def _github_headers(self, token):
-        """Return standard GitHub API headers with the given Bearer token."""
-        return {
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "Authorization": f"Bearer {token}",
-        }
+    def _github_token(self):
+        """Return the current user's GitHub token, which only sudo() can read."""
+        return self.env.user.sudo().github_access_token
 
-    def _github_current_user_can_manage_repo(self, task):
+    def _github_can_manage_repo(self, repo_full_name):
         """Return True if the current Odoo user has push or admin access on GitHub.
 
         Calls GET /repos/{full_name} and inspects the `permissions` object
         returned by the API. Returns False on any error (no token, network
         failure, 403, etc.) so callers can treat the result as a simple bool.
         """
-        token = self.env.user.sudo().github_access_token
+        token = self._github_token()
         if not token:
             return False
 
-        repo_full_name, _ = self._parse_github_pr_url(task.github_pr_url)
-        if not repo_full_name:
-            return False
-
         try:
-            resp = requests.get(
-                f"https://api.github.com/repos/{repo_full_name}",
-                headers=self._github_headers(token),
-                timeout=10,
-            )
-            if resp.status_code != 200:
-                return False
-            permissions = resp.json().get("permissions", {})
-            # 'push' covers write access; 'admin' is a superset
-            return bool(permissions.get("push") or permissions.get("admin"))
+            resp = github_request("GET", f"/repos/{repo_full_name}", token, timeout=10)
         except requests.RequestException:
             return False
+        if resp.status_code != 200:
+            return False
+        permissions = resp.json().get("permissions", {})
+        # 'push' covers write access; 'admin' is a superset
+        return bool(permissions.get("push") or permissions.get("admin"))
+
+    # ------------------------------------------------------------------
+    # Pull request sync (called by the webhook controller)
+    # ------------------------------------------------------------------
+
+    @api.model
+    def _github_prepare_pr_vals(self, pr_data):
+        """Map the `pull_request` object of a GitHub payload to field values."""
+        pr_state = pr_data.get("state", "open")
+        # GitHub marks a PR as 'closed' even when merged; check merged_at to distinguish
+        if pr_state == "closed" and pr_data.get("merged_at"):
+            pr_state = "merged"
+
+        label_names = [label["name"] for label in pr_data.get("labels", []) if label.get("name")]
+        return {
+            "github_pr_url": pr_data.get("html_url", ""),
+            "github_pr_description": pr_data.get("body") or "",
+            "github_pr_number": pr_data.get("number", 0),
+            "github_pr_state": pr_state,
+            "github_pr_labels": ", ".join(label_names),
+        }
+
+    @api.model
+    def _github_sync_pull_request(self, pr_data, repo_full_name):
+        """Parse a PR payload and update matching Odoo tasks.
+
+        Two matching strategies are tried in order:
+          1. Per-project  — repo is linked to an Odoo project with a prefix;
+                            scans PR body for `{prefix}-{task_number}` patterns
+                            and resolves them as `{project.key}-{number}` task keys.
+          2. Global prefix (fallback) — legacy mode; scans PR body for
+                            `{global_prefix}-{database_id}` and browses tasks by ID.
+
+        Args:
+            pr_data        (dict): The `pull_request` object from the GitHub payload.
+            repo_full_name (str): `owner/repo` string from the payload.
+
+        Returns:
+            project.task: The tasks that were updated.
+        """
+        description = pr_data.get("body") or ""
+        linked_repos = self.env["github.repository"].search([
+            ("full_name", "=", repo_full_name),
+            ("project_id", "!=", False),
+        ])
+        if linked_repos:
+            tasks = self._github_match_by_project(linked_repos, description)
+        else:
+            tasks = self._github_match_by_global_prefix(description)
+
+        pr_number = pr_data.get("number", 0)
+        if not tasks:
+            _logger.info("GitHub webhook: no task found for PR #%s", pr_number)
+            return tasks
+
+        tasks.write(self._github_prepare_pr_vals(pr_data))
+        _logger.info("GitHub webhook: updated task(s) %s from PR #%s", tasks.ids, pr_number)
+        return tasks
+
+    @api.model
+    def _github_match_by_project(self, linked_repos, description):
+        """Match tasks via per-project prefix and Odoo task key.
+
+        For each repo→project pair, the method:
+          - Reads the project's github_task_prefix (e.g. "PROJ")
+          - Scans the PR body for `PROJ-{number}`
+          - Resolves task keys as `{project.key}-{number}` (e.g. "PROJ-42")
+
+        Args:
+            linked_repos (Recordset): github.repository records linked to a project.
+            description  (str): PR body text.
+
+        Returns:
+            project.task: The matching tasks.
+        """
+        task_keys = set()
+        for project in linked_repos.project_id:
+            prefix = project.github_task_prefix
+            if not prefix or not project.key:
+                _logger.info(
+                    "GitHub webhook: project '%s' has no prefix or key, skipping",
+                    project.display_name,
+                )
+                continue
+            numbers = _find_task_numbers(prefix, description)
+            task_keys.update(f"{project.key}-{number}" for number in numbers)
+
+        if not task_keys:
+            return self.browse()
+        return self.search([("key", "in", list(task_keys))])
+
+    @api.model
+    def _github_match_by_global_prefix(self, description):
+        """Legacy fallback: match tasks using a global prefix and task database ID.
+
+        Scans the PR body for `{global_prefix}-{id}` patterns and browses
+        project.task by database ID. This mode is used when the repository has
+        not been linked to any Odoo project via github.repository.
+
+        Args:
+            description (str): PR body text.
+
+        Returns:
+            project.task: The matching tasks.
+        """
+        prefix = self.env["ir.config_parameter"].sudo().get_param(PARAM_TASK_PREFIX, "task")
+        return self.browse(_find_task_numbers(prefix, description)).exists()
 
     # ------------------------------------------------------------------
     # GitHub label management
     # ------------------------------------------------------------------
+
+    def _github_label_request(self, method, path, allowed_statuses=(), **kwargs):
+        """Call a label endpoint and return the response.
+
+        Raises:
+            UserError: If the user has no token, GitHub cannot be reached, or
+                       GitHub answers with an error not in allowed_statuses.
+        """
+        token = self._github_token()
+        if not token:
+            raise UserError(_("GitHub account not connected."))
+        try:
+            resp = github_request(method, path, token, timeout=10, **kwargs)
+        except requests.RequestException as exc:
+            raise UserError(_("Unable to update GitHub labels: %s", exc))
+        if not resp.ok and resp.status_code not in allowed_statuses:
+            raise UserError(_("Unable to update GitHub labels: %s", resp.reason))
+        return resp
 
     def _github_ensure_label(self, repo_full_name, label_name, color, description):
         """Ensure a label exists on the GitHub repo, creating it if absent.
@@ -202,43 +333,23 @@ class ProjectTask(models.Model):
         This prevents failure when _github_add_label_to_pr() is called for a
         label that hasn't been created on the repo yet.
         """
-        token = self.env.user.sudo().github_access_token
-        if not token:
-            raise UserError(_("GitHub account not connected."))
-
-        url = f"https://api.github.com/repos/{repo_full_name}/labels/{label_name}"
-        headers = self._github_headers(token)
-        try:
-            resp = requests.get(url, headers=headers, timeout=10)
-            if resp.status_code == 404:
-                # Label does not exist yet — create it
-                requests.post(
-                    f"https://api.github.com/repos/{repo_full_name}/labels",
-                    headers=headers,
-                    json={"name": label_name, "color": color, "description": description},
-                    timeout=10,
-                ).raise_for_status()
-            else:
-                resp.raise_for_status()
-        except requests.RequestException as exc:
-            raise UserError(_("Unable to verify or create GitHub label: %s") % exc)
+        labels_path = f"/repos/{repo_full_name}/labels"
+        resp = self._github_label_request("GET", f"{labels_path}/{label_name}", allowed_statuses=(404,))
+        if resp.status_code == 404:
+            # Label does not exist yet — create it
+            self._github_label_request(
+                "POST",
+                labels_path,
+                json={"name": label_name, "color": color, "description": description},
+            )
 
     def _github_add_label_to_pr(self, repo_full_name, pr_number, label_name):
         """Add a label to a GitHub pull request."""
-        token = self.env.user.sudo().github_access_token
-        if not token:
-            raise UserError(_("GitHub account not connected."))
-
-        url = f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/labels"
-        try:
-            requests.post(
-                url,
-                headers=self._github_headers(token),
-                json=[label_name],
-                timeout=10,
-            ).raise_for_status()
-        except requests.RequestException as exc:
-            raise UserError(_("Unable to add GitHub label '%s': %s") % (label_name, exc))
+        self._github_label_request(
+            "POST",
+            f"/repos/{repo_full_name}/issues/{pr_number}/labels",
+            json=[label_name],
+        )
 
     def _github_remove_label_from_pr(self, repo_full_name, pr_number, label_name):
         """Remove a label from a GitHub pull request.
@@ -246,18 +357,11 @@ class ProjectTask(models.Model):
         A 404 response is treated as success because the label may have been
         removed manually on GitHub already.
         """
-        token = self.env.user.sudo().github_access_token
-        if not token:
-            raise UserError(_("GitHub account not connected."))
-
-        url = f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/labels/{label_name}"
-        try:
-            resp = requests.delete(url, headers=self._github_headers(token), timeout=10)
-            # 200/204 = removed successfully; 404 = already absent — all acceptable
-            if resp.status_code not in (200, 204, 404):
-                raise requests.RequestException(resp.text)
-        except requests.RequestException as exc:
-            raise UserError(_("Unable to remove GitHub label '%s': %s") % (label_name, exc))
+        self._github_label_request(
+            "DELETE",
+            f"/repos/{repo_full_name}/issues/{pr_number}/labels/{label_name}",
+            allowed_statuses=(404,),
+        )
 
     def _github_update_pr_labels(self, label_to_add, label_to_remove):
         """Apply a label swap on the linked GitHub PR.
@@ -279,7 +383,7 @@ class ProjectTask(models.Model):
         repo_full_name, pr_number = self._parse_github_pr_url(self.github_pr_url)
         if not repo_full_name or not pr_number:
             raise UserError(_("Invalid GitHub PR URL."))
-        if not self._github_current_user_can_manage_repo(self):
+        if not self._github_can_manage_repo(repo_full_name):
             raise UserError(_("You do not have permission to modify labels on this GitHub repository."))
 
         # Step 2 — look up label definition (color + description for creation)
@@ -307,47 +411,40 @@ class ProjectTask(models.Model):
 
     def action_github_mark_ok_to_merge(self):
         self._github_update_pr_labels("ok-to-merge", "fix")
-        return {
-            "type": "ir.actions.client",
-            "tag": "display_notification",
-            "params": {
-                "title": _("GitHub PR Updated"),
-                "message": _("Label 'ok-to-merge' has been applied."),
-                "type": "success",
-            },
-        }
+        return notification_action(
+            _("GitHub PR Updated"),
+            _("Label 'ok-to-merge' has been applied."),
+        )
 
     def action_github_mark_fix(self):
         self._github_update_pr_labels("fix", "ok-to-merge")
-        return {
-            "type": "ir.actions.client",
-            "tag": "display_notification",
-            "params": {
-                "title": _("GitHub PR Updated"),
-                "message": _("Label 'fix' has been applied."),
-                "type": "warning",
-            },
-        }
+        return notification_action(
+            _("GitHub PR Updated"),
+            _("Label 'fix' has been applied."),
+            "warning",
+        )
 
     # ------------------------------------------------------------------
     # Comment sync
     # ------------------------------------------------------------------
 
-    def message_post(self, *, body='', subject=None, message_type='notification',
-                     subtype_xmlid=None, subtype_id=False, parent_id=False,
-                     attachments=None, **kwargs):
-        """Override to mirror Odoo chatter messages to the linked GitHub PR.
+    def message_post(self, **kwargs):
+        """Override to mirror chatter comments to the linked GitHub PR.
 
         super() is called first so the message is always saved in Odoo,
         even if the GitHub sync step later fails (which only logs a warning).
+        Only comments written by users are mirrored, not system notifications.
         """
-        message = super().message_post(
-            body=body, subject=subject, message_type=message_type,
-            subtype_xmlid=subtype_xmlid, subtype_id=subtype_id,
-            parent_id=parent_id, attachments=attachments, **kwargs
-        )
-        if self.github_sync_comments and self.github_pr_url and body:
-            self._github_post_comment_to_pr(body)
+        message = super().message_post(**kwargs)
+        body = kwargs.get("body")
+        if (
+            kwargs.get("message_type") == "comment"
+            and body
+            and self.github_sync_comments
+            and self.github_pr_url
+        ):
+            # Chatter bodies are HTML; GitHub expects Markdown
+            self._github_post_comment_to_pr(html2plaintext(body))
         return message
 
     def _github_post_comment_to_pr(self, comment_body):
@@ -358,7 +455,7 @@ class ProjectTask(models.Model):
         so failing here should not disrupt the user's workflow.
         """
         self.ensure_one()
-        token = self.env.user.sudo().github_access_token
+        token = self._github_token()
         if not token:
             return
 
@@ -366,13 +463,13 @@ class ProjectTask(models.Model):
         if not repo_full_name or not pr_number:
             return
 
-        url = f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/comments"
         try:
-            requests.post(
-                url,
-                headers=self._github_headers(token),
-                json={"body": comment_body},
+            github_request(
+                "POST",
+                f"/repos/{repo_full_name}/issues/{pr_number}/comments",
+                token,
                 timeout=10,
+                json={"body": comment_body},
             ).raise_for_status()
         except requests.RequestException as exc:
             # Non-fatal: log and continue — the Odoo message is already posted

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-label="Project GitHub Integration for Odoo 16">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#24292f"/>
+      <stop offset="1" stop-color="#714b67"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="300" rx="20" fill="url(#bg)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M150 95v110"/>
+    <path d="M238 95v28c0 26-20 34-44 40-24 6-44 14-44 40"/>
+  </g>
+  <circle cx="150" cy="86" r="23" fill="#ffffff"/>
+  <circle cx="238" cy="86" r="23" fill="#3fb950"/>
+  <circle cx="150" cy="214" r="23" fill="#ffffff"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#ffffff">
+    <text x="320" y="138" font-size="56" font-weight="700">Project GitHub Integration</text>
+    <text x="322" y="188" font-size="26" fill="#d0d7de">GitHub Pull Requests, inside your Odoo tasks</text>
+  </g>
+</svg>

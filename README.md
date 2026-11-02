@@ -1,224 +1,302 @@
-# Project GitHub Integration
+<p align="center">
+  <img src="docs/images/banner.svg" alt="Project GitHub Integration" width="100%">
+</p>
 
-โมดูล Odoo สำหรับเชื่อมต่อ GitHub Pull Requests กับ Project Tasks ใน Odoo โดยอัตโนมัติผ่าน Webhook
+<p align="center">
+  <b>English</b> · <a href="README.th.md">ภาษาไทย</a>
+</p>
 
-- **Version:** 16.0.1.0.0
-- **Author:** Aginix Technologies Co., ltd.
-- **License:** LGPL-3
-- **Category:** Project Management
+<p align="center">
+  <img src="https://img.shields.io/badge/Odoo-16.0-714B67?logo=odoo&logoColor=white" alt="Odoo 16.0">
+  <img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white" alt="Python 3.8+">
+  <img src="https://img.shields.io/badge/version-16.0.3.1.0-2ea44f" alt="Version 16.0.3.1.0">
+  <img src="https://img.shields.io/badge/license-LGPL--3-blue" alt="License LGPL-3">
+</p>
 
----
+<p align="center">
+  Link GitHub Pull Requests to Odoo Project tasks automatically.<br>
+  See PR status in the task, approve from Odoo, and keep the conversation in sync.
+</p>
 
-## ฟีเจอร์หลัก
+<p align="center">
+  <img src="docs/images/task-pull-request.png" alt="GitHub PR tab on an Odoo task" width="85%">
+</p>
 
-- รับข้อมูล Pull Request จาก GitHub ผ่าน Webhook โดยอัตโนมัติ
-- อัปเดต Task ใน Odoo เมื่อ PR มีการเปลี่ยนแปลง (เปิด, แก้ไข, ปิด, merge)
-- ตรวจจับ Task ID จาก PR description อัตโนมัติ (เช่น `task-42`, `TASK-211`)
-- แสดงสถานะ PR แบบ color-coded (open = น้ำเงิน, merged = เขียว, closed = เทา)
-- แสดง PR description พร้อม Markdown rendering (รองรับ code block, table)
-- รองรับ PR เดียวที่ระบุหลาย Task พร้อมกัน
-- ป้องกันการปลอมแปลง Webhook ด้วย HMAC-SHA256 Signature
+## Contents
 
----
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [How it works](#how-it-works)
+- [Security](#security)
+- [Project structure](#project-structure)
+- [Running the tests](#running-the-tests)
+- [Troubleshooting](#troubleshooting)
 
-## วิดีโอสอนใช้งาน
-https://youtu.be/Zz5PNZbrCLQ
+## Features
 
----
+| | Feature | Details |
+|---|---------|---------|
+| 🔗 | **Automatic linking** | Mention a task in a PR description and the webhook links it. One PR can update many tasks. |
+| 🚦 | **Live PR status** | `Open`, `Merged` and `Closed` badges, plus PR labels, stay up to date on the task. |
+| 📝 | **Rendered descriptions** | PR descriptions are shown as sanitized Markdown, including code blocks and tables. |
+| ✅ | **Review from Odoo** | **Approve PR** and **Request Changes** set the `ok-to-merge` and `fix` labels on GitHub. |
+| 💬 | **Comment sync** | Optionally mirror chatter comments to the PR. |
+| 🔐 | **GitHub login** | Each user connects their own account with OAuth. |
+| 📁 | **Repository management** | Sync your repositories, link them to projects, and edit their descriptions. |
+| 🛡️ | **Signed webhooks** | Every delivery is verified with HMAC-SHA256. |
 
-## ความต้องการของระบบ
+### Video tutorial
 
-| รายการ | เวอร์ชัน |
-|--------|---------|
+[▶️ Watch on YouTube](https://youtu.be/Zz5PNZbrCLQ)
+
+## Screenshots
+
+> Taken from a demo database with sample data.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/task-pr-description.png" alt="Rendered PR description"></td>
+    <td width="50%"><img src="docs/images/task-merged.png" alt="Merged PR on a task"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Rendered PR description</b></td>
+    <td align="center"><b>Merged PR: review buttons are hidden</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/project-github-tab.png" alt="GitHub tab on a project"></td>
+    <td><img src="docs/images/repo-selector-wizard.png" alt="Repository selector"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Project: prefix and tracked repositories</b></td>
+    <td align="center"><b>Choose repositories to link</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/repositories.png" alt="GitHub repositories list"></td>
+    <td><img src="docs/images/settings.png" alt="GitHub Integration settings"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Project → GitHub Repositories</b></td>
+    <td align="center"><b>Settings → GitHub Integration</b></td>
+  </tr>
+</table>
+
+## Requirements
+
+| Item | Version / notes |
+|------|-----------------|
 | Odoo | 16.0 |
 | Python | 3.8+ |
+| Odoo modules | `project`, and [`project_key`](https://github.com/OCA/project/tree/16.0/project_key) from OCA |
+| Python library | `markdown` (optional; without it, descriptions are shown as plain text) |
 
-**Odoo Modules ที่ต้องติดตั้งก่อน:**
-- `project` (มาพร้อม Odoo)
-- `project_key` (ต้องติดตั้งแยก)
-
-**Python Library (ไม่บังคับ แต่แนะนำ):**
 ```bash
 pip install markdown
 ```
-> หากไม่ติดตั้ง จะแสดง PR description เป็น plain text แทน
 
----
+## Installation
 
-## วิธีติดตั้ง
-
-### ขั้นตอนที่ 1: คัดลอกโมดูลเข้า Odoo
+**1. Get the code**
 
 ```bash
-# วิธีที่ 1: Clone โดยตรงไปที่ addons directory
-git clone https://github.com/<your-username>/project_link_github.git /path/to/odoo/addons/project_link_github
-
-# วิธีที่ 2: Copy โฟลเดอร์โมดูลไปไว้ใน custom addons path
-cp -r project_link_github /path/to/odoo/custom-addons/
+git clone https://github.com/madara1150/project_link_github.git /opt/odoo/custom-addons/project_link_github
 ```
 
-### ขั้นตอนที่ 2: เพิ่ม Path ใน Odoo Config
-
-เปิดไฟล์ `odoo.conf` แล้วเพิ่ม path ของโมดูล:
+**2. Add the repository folder to `addons_path`.** It is the folder that contains `project_github/`.
 
 ```ini
 [options]
-addons_path = /path/to/odoo/addons,/path/to/odoo/custom-addons
+addons_path = /opt/odoo/addons,/opt/odoo/custom-addons/project_link_github
 ```
 
-### ขั้นตอนที่ 3: Restart Odoo และอัปเดต App List
+**3. Restart Odoo, then install.** Go to **Apps → Update Apps List**, search for `Project GitHub Integration`, and click **Install**.
+
+**Upgrading from an earlier version?** Update the module and set a webhook secret (see the [security note](#security)):
 
 ```bash
-# Restart Odoo service
-sudo systemctl restart odoo
-
-# หรือรัน Odoo ด้วย flag update
-python odoo-bin -u all -d <database_name>
+odoo-bin -d <database> -u project_github --stop-after-init
 ```
 
-### ขั้นตอนที่ 4: ติดตั้งโมดูล
+## Configuration
 
-1. ไปที่ **Apps** ใน Odoo
-2. คลิก **Update Apps List** (ถ้ายังไม่เห็นโมดูล)
-3. ค้นหา `Project GitHub Integration`
-4. คลิก **Install**
+### 1. Create a GitHub OAuth App
 
----
+Needed for GitHub login, repository sync, review buttons and comment sync.
 
-## การตั้งค่า
+1. Open [github.com/settings/developers](https://github.com/settings/developers) and click **New OAuth App**.
+2. Set **Authorization callback URL** to `https://<your-odoo-domain>/github/oauth/callback`.
+3. Copy the **Client ID** and generate a **Client Secret**.
 
-### ตั้งค่าใน Odoo
+### 2. Configure Odoo
 
-1. ไปที่ **Settings** → **General Settings**
-2. เลื่อนหา section **"GitHub Integration"**
-3. กรอกข้อมูล:
+Go to **Settings → GitHub Integration**:
 
-| ช่อง | คำอธิบาย | ตัวอย่าง |
-|------|----------|---------|
-| **Webhook Secret** | รหัสลับสำหรับยืนยันความถูกต้องของ Webhook (ต้องตรงกับที่ตั้งใน GitHub) | `my-secret-key-123` |
-| **Task Reference Prefix** | คำนำหน้า Task ID ที่ใช้ใน PR description | `task` |
+| Field | Description | Example |
+|-------|-------------|---------|
+| **Client ID** / **Client Secret** | From the OAuth App | |
+| **Webhook Secret** | Required. Must match the secret on GitHub | a long random string |
+| **Task Reference Prefix (Fallback)** | Used for repositories not linked to a project | `task` |
 
-4. คลิก **Save**
+### 3. Add the webhook on GitHub
 
-> **หมายเหตุ:** Webhook URL ของคุณคือ `https://<your-odoo-domain>/github/webhook`
+In the repository, open **Settings → Webhooks → Add webhook**:
 
-### ตั้งค่า GitHub Webhook
-
-1. ไปที่ GitHub Repository ที่ต้องการเชื่อมต่อ
-2. คลิก **Settings** → **Webhooks** → **Add webhook**
-3. กรอกข้อมูล:
-
-| ช่อง | ค่าที่ต้องกรอก |
-|------|--------------|
+| Field | Value |
+|-------|-------|
 | **Payload URL** | `https://<your-odoo-domain>/github/webhook` |
 | **Content type** | `application/json` |
-| **Secret** | ค่าเดียวกับที่กรอกใน Odoo Settings |
-| **Which events?** | เลือก **"Let me select individual events"** แล้วติ๊ก **Pull requests** |
-| **Active** | เปิดใช้งาน |
+| **Secret** | The same value as in Odoo |
+| **Events** | **Let me select individual events** → **Pull requests** |
 
-4. คลิก **Add webhook**
+### 4. Connect your account
 
----
+Open your user menu → **Preferences** and click **Connect with GitHub**. Once connected, the **GitHub** section shows your username; click it to disconnect.
 
-## วิธีใช้งาน
+<p align="center">
+  <img src="docs/images/profile.png" alt="GitHub section in Preferences" width="70%">
+</p>
 
-### เชื่อม PR กับ Task
+### 5. Link repositories to a project
 
-เมื่อสร้าง Pull Request บน GitHub ให้ระบุ Task ID ใน **description** ของ PR:
+On a project, open the **GitHub** tab, set **GitHub Task Prefix** (for example `store`), and click **Sync & Link Repos**.
 
-```
-## สิ่งที่เปลี่ยนแปลง
-- เพิ่มฟีเจอร์ login ด้วย SSO
+## Usage
 
-## Related Tasks
-task-42
-task-211
-```
+### Link a PR to a task
 
-> รองรับทั้ง `task-42`, `TASK-42`, `Task-42` (ไม่ sensitive ตัวพิมพ์เล็กใหญ่)
+Mention the task in the **PR description**. Matching is case-insensitive.
 
-### ดูข้อมูล PR ใน Odoo Task
+```markdown
+## What changed
+- Add single sign-on login
 
-1. ไปที่ **Project** → เลือก Task ที่ถูก link
-2. คลิก Tab **"GitHub PR"** เพื่อดู:
-   - PR URL (คลิกเพื่อเปิด GitHub ได้)
-   - PR Number
-   - สถานะ PR (open / merged / closed)
-3. คลิก Tab **"GitHub PR Description"** เพื่อดูรายละเอียด PR แบบ Markdown
-
-### สถานะ PR ที่รองรับ
-
-| สถานะ | สี | ความหมาย |
-|------|----|----------|
-| `open` | น้ำเงิน | PR ยังเปิดอยู่ |
-| `merged` | เขียว | PR ถูก merge เข้า branch แล้ว |
-| `closed` | เทา | PR ถูกปิดโดยไม่ merge |
-
----
-
-## Data Flow
-
-```
-GitHub Repository
-      │
-      │  (PR opened / edited / closed / merged)
-      ▼
-POST /github/webhook
-      │
-      ├─ ตรวจสอบ HMAC-SHA256 Signature
-      ├─ อ่านข้อมูล PR (URL, number, state, description)
-      ├─ ค้นหา task-XXX ใน PR description
-      ├─ หา Task ที่ตรงกันใน Database
-      └─ อัปเดต Task fields
-            │
-            ▼
-     project.task (Odoo)
-     ├─ github_pr_url
-     ├─ github_pr_number
-     ├─ github_pr_state
-     └─ github_pr_description
+Closes store-42, store-43
 ```
 
----
+| Repository | Reference format | Finds |
+|------------|------------------|-------|
+| Linked to a project | `{project prefix}-{number}` | The task with key `{project key}-{number}`. `store-42` finds `STORE-42`. |
+| Not linked | `{fallback prefix}-{id}` | The task with that database ID. `task-211` finds task ID 211. |
 
-## โครงสร้างไฟล์
+### Review a PR
 
+When the PR is open and you have push access to the repository, the task shows two buttons:
+
+| Button | Adds label | Removes label |
+|--------|------------|---------------|
+| **Approve PR** | `ok-to-merge` | `fix` |
+| **Request Changes** | `fix` | `ok-to-merge` |
+
+### Sync comments
+
+Tick **Sync Comments to GitHub PR** in the **GitHub PR** tab. Messages and log notes written on the task are then posted to the PR as plain text with your GitHub account, so **internal notes become visible on GitHub**. System notifications are not sent.
+
+### PR states
+
+| State | Badge | Meaning |
+|-------|-------|---------|
+| `open` | 🔵 | The PR is open |
+| `merged` | 🟢 | The PR was merged |
+| `closed` | ⚪ | The PR was closed without merging |
+
+## How it works
+
+```mermaid
+flowchart LR
+    GH[GitHub repository] -- "pull_request event" --> WH["POST /github/webhook"]
+    WH --> SIG{Valid signature?}
+    SIG -- No --> R[401 rejected]
+    SIG -- Yes --> LINK{Repository linked<br>to a project?}
+    LINK -- Yes --> KEY[Find tasks by<br>project key]
+    LINK -- No --> ID[Find tasks by<br>fallback prefix]
+    KEY --> TASK[(project.task)]
+    ID --> TASK
+    TASK -- "Approve / Request Changes<br>comments" --> GH
 ```
+
+## Security
+
+- **A webhook secret is required.** Since `16.0.3.1.0`, deliveries return `401` until one is set, because the endpoint is public.
+- **PR descriptions are sanitized** before they are displayed.
+- **Access tokens** are readable only by administrators and are excluded from user-facing reads. They are stored unencrypted in the database, so protect your backups.
+- **Tokens stay with their owner.** Repository records are visible to all internal users, but only the owner can use a record to call GitHub.
+- **The `repo` OAuth scope** gives access to the user's private repositories. Users can remove the stored token with the connected button in **Preferences**.
+
+## Project structure
+
+```text
 project_link_github/
-├── __manifest__.py                    # ข้อมูลโมดูล (ชื่อ, version, dependencies)
-├── __init__.py
-├── controllers/
-│   ├── __init__.py
-│   └── github_webhook.py              # รับและประมวลผล Webhook จาก GitHub
-├── models/
-│   ├── __init__.py
-│   ├── project_task.py                # เพิ่ม fields GitHub ใน Task
-│   └── res_config_settings.py         # การตั้งค่า (secret, prefix)
-├── views/
-│   ├── project_task_views.xml         # UI แสดงข้อมูล PR ใน Task form
-│   └── res_config_settings_views.xml  # UI ตั้งค่าใน Settings
-└── security/
-    └── ir.model.access.csv            # สิทธิ์การเข้าถึง
+├── docs/images/                  # README images
+└── project_github/
+    ├── controllers/
+    │   ├── github_oauth.py       # OAuth login and repository sync API
+    │   └── github_webhook.py     # Webhook endpoint and signature check
+    ├── models/
+    │   ├── github_repository.py  # github.repository
+    │   ├── project_project.py    # Prefix and tracked repositories
+    │   ├── project_task.py       # PR fields, matching, labels, comment sync
+    │   ├── res_config_settings.py
+    │   └── res_users.py          # GitHub account on the user
+    ├── wizard/                   # Repository selector
+    ├── views/                    # Backend views
+    ├── static/                   # OWL widget, notification service, icon
+    ├── tests/                    # Automated tests
+    └── utils.py                  # Shared GitHub API helpers and constants
 ```
+
+## Running the tests
+
+```bash
+odoo-bin -d <test_database> -i project_github --test-enable --test-tags=/project_github --stop-after-init
+```
+
+## Troubleshooting
+
+<details>
+<summary><b>GitHub reports 401 on webhook deliveries</b></summary>
+
+Check that **Webhook Secret** is set in Odoo and is identical on GitHub. You can see each delivery and its response in **Settings → Webhooks → Recent Deliveries** on GitHub.
+</details>
+
+<details>
+<summary><b>The webhook returns 404 or never reaches Odoo</b></summary>
+
+GitHub must be able to reach your server over the internet. If the server hosts several databases, set `dbfilter` so that Odoo can choose one: the webhook arrives without a session.
+</details>
+
+<details>
+<summary><b>The task is not updated</b></summary>
+
+- The reference must be in the PR **description**, not in the title or a commit.
+- Check the prefix on the project, or the fallback prefix for unlinked repositories.
+- Linked repositories use the project key and task number; unlinked ones use the database ID.
+</details>
+
+<details>
+<summary><b>Approve PR and Request Changes are missing</b></summary>
+
+They appear only when the PR is open, your GitHub account is connected, and you have push access to the repository.
+</details>
+
+<details>
+<summary><b>The PR description shows as plain text</b></summary>
+
+Install `markdown` in the Python environment of Odoo, then restart Odoo.
+</details>
+
+<details>
+<summary><b>Reading the logs</b></summary>
+
+```bash
+tail -f /var/log/odoo/odoo.log | grep -i github
+```
+</details>
 
 ---
 
-## การแก้ไขปัญหา
-
-**Webhook ไม่ทำงาน / ไม่ได้รับข้อมูล**
-- ตรวจสอบว่า Odoo เข้าถึงได้จาก Internet (GitHub ต้องส่ง request มาได้)
-- เปิด HTTPS บน Odoo server
-- ตรวจสอบ Webhook Secret ว่าตรงกันทั้ง GitHub และ Odoo Settings
-
-**Task ไม่ถูก update**
-- ตรวจสอบว่า Task ID ที่ระบุใน PR description ตรงกับ Task ที่มีอยู่ใน Odoo
-- ตรวจสอบ prefix ใน Settings ว่าตรงกับที่ใช้ใน PR (เช่น `task` vs `TASK`)
-
-**PR Description ไม่แสดง Markdown**
-- ติดตั้ง Python library: `pip install markdown`
-- Restart Odoo หลังติดตั้ง
-
-**ดู Log เพื่อ Debug**
-```bash
-tail -f /var/log/odoo/odoo.log | grep github
-```
+<p align="center">
+  Made by Aginix Technologies · Licensed under <a href="https://www.gnu.org/licenses/lgpl-3.0.html">LGPL-3</a>
+</p>

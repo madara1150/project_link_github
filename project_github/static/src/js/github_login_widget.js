@@ -57,13 +57,16 @@ export class GithubLoginButton extends Component {
             body: _t("This will remove your stored GitHub token. Are you sure?"),
             confirm: async () => {
                 this.state.loading = true;
-                await this.orm.call(
-                    this.props.record.resModel,
-                    "action_github_disconnect",
-                    [this.props.record.resId],
-                );
-                await this.props.record.model.load();
-                this.state.loading = false;
+                try {
+                    await this.orm.call(
+                        this.props.record.resModel,
+                        "action_github_disconnect",
+                        [this.props.record.resId],
+                    );
+                    await this.props.record.model.load();
+                } finally {
+                    this.state.loading = false;
+                }
             },
         });
     }
