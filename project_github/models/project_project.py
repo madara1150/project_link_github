@@ -5,13 +5,9 @@ import requests
 from odoo import fields, models, _
 from odoo.exceptions import UserError
 
-_logger = logging.getLogger(__name__)
+from ..utils import fetch_user_repos
 
-GITHUB_REPOS_URL = "https://api.github.com/user/repos"
-_GITHUB_API_HEADERS = {
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-}
+_logger = logging.getLogger(__name__)
 
 
 class ProjectProject(models.Model):
@@ -38,7 +34,8 @@ class ProjectProject(models.Model):
                  linked to this project) so the user sees the full selectable list
                - repository_ids: repos currently linked to this project (pre-checked)
 
-        Raises UserError if the current user has not connected their GitHub account.
+        Raises UserError if the current user has not connected their GitHub account
+        or if GitHub cannot be reached.
         """
         self.ensure_one()
         user = self.env.user
@@ -50,13 +47,17 @@ class ProjectProject(models.Model):
             )
 
         # Step 1 & 2 — fetch from GitHub and upsert local records
-        repos_data = self._fetch_github_repos(token)
+        try:
+            repos_data = fetch_user_repos(token)
+        except requests.RequestException as exc:
+            _logger.exception("GitHub: repository sync failed: %s", exc)
+            raise UserError(
+                _("Cannot read your repositories from GitHub. "
+                  "Reconnect your GitHub account and try again.")
+            )
         self.env["github.repository"].sudo()._sync_from_api(user, repos_data)
 
         # Step 3 — build wizard with pre-selected repos
-        already_linked = self.env["github.repository"].search([
-            ("project_id", "=", self.id),
-        ])
         # Include unlinked repos and repos already tied to this project
         available_repos = self.env["github.repository"].search([
             ("user_id", "=", user.id),
@@ -68,7 +69,7 @@ class ProjectProject(models.Model):
         wizard = self.env["github.repo.selector"].create({
             "project_id": self.id,
             "available_repo_ids": [(6, 0, available_repos.ids)],
-            "repository_ids": [(6, 0, already_linked.ids)],
+            "repository_ids": [(6, 0, self.github_repository_ids.ids)],
         })
 
         return {
@@ -79,40 +80,3 @@ class ProjectProject(models.Model):
             "view_mode": "form",
             "target": "new",
         }
-
-    @staticmethod
-    def _fetch_github_repos(token):
-        """Fetch every repository accessible by the authenticated user (paginated).
-
-        Note: This method contains the same pagination logic as
-        GithubOAuthController._fetch_all_repos(). They are kept separate because
-        one runs in a controller context (request.env) and the other in a model
-        context (self.env), which makes sharing a utility non-trivial in Odoo.
-
-        Args:
-            token (str): GitHub access token.
-
-        Returns:
-            list[dict]: Raw GitHub API repository objects.
-        """
-        repos = []
-        page = 1
-        headers = {**_GITHUB_API_HEADERS, "Authorization": f"Bearer {token}"}
-        while True:
-            try:
-                resp = requests.get(
-                    GITHUB_REPOS_URL,
-                    params={"per_page": 100, "page": page, "sort": "updated"},
-                    headers=headers,
-                    timeout=15,
-                )
-                resp.raise_for_status()
-            except requests.RequestException as exc:
-                _logger.exception("GitHub: repo list page %s failed: %s", page, exc)
-                break  # Return whatever was fetched so far
-            batch = resp.json()
-            if not batch:
-                break  # Empty page = no more results
-            repos.extend(batch)
-            page += 1
-        return repos

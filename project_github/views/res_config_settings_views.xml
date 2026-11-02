@@ -11,7 +11,7 @@
                     class="app_settings_block"
                     data-string="GitHub Integration"
                     string="GitHub Integration"
-                    data-key="kmitl_project_github"
+                    data-key="project_github"
                 >
                     <h2>GitHub OAuth App</h2>
                     <div class="row mt16 o_settings_container">

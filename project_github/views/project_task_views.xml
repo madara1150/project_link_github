@@ -11,26 +11,20 @@
                     type="object"
                     string="Approve PR"
                     class="btn-success"
-                    attrs="{
-                                    'invisible': [
-                                        ('github_can_manage_pr_labels', '=', False),
-                                        ('github_pr_state', '!=', 'open'),
-                                        ('github_user_connected', '=', False)
-                                    ]
-                                }"
+                    attrs="{'invisible': ['|', '|',
+                        ('github_can_manage_pr_labels', '=', False),
+                        ('github_pr_state', '!=', 'open'),
+                        ('github_user_connected', '=', False)]}"
                 />
                 <button
                     name="action_github_mark_fix"
                     type="object"
                     string="Request Changes"
                     class="btn-danger"
-                    attrs="{
-                                    'invisible': [
-                                        ('github_can_manage_pr_labels', '=', False),
-                                        ('github_pr_state', '!=', 'open'),
-                                        ('github_user_connected', '=', False),
-                                    ]
-                                }"
+                    attrs="{'invisible': ['|', '|',
+                        ('github_can_manage_pr_labels', '=', False),
+                        ('github_pr_state', '!=', 'open'),
+                        ('github_user_connected', '=', False)]}"
                 />
             </xpath>
             <xpath expr="//notebook" position="inside">
